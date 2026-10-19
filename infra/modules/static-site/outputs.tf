@@ -1,0 +1,15 @@
+output "site_bucket" {
+  value = aws_s3_bucket.site.bucket
+}
+
+output "logs_bucket" {
+  value = aws_s3_bucket.logs.bucket
+}
+
+output "distribution_id" {
+  value = aws_cloudfront_distribution.site.id
+}
+
+output "site_url" {
+  value = "https://${aws_cloudfront_distribution.site.domain_name}"
+}

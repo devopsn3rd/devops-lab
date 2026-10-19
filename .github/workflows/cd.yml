@@ -1,0 +1,96 @@
+name: CD
+
+# A merged PR is a push to the target branch. Branch protection guarantees
+# nothing reaches devel or stage without passing CI first.
+on:
+  push:
+    branches: [devel, stage]
+
+permissions:
+  id-token: write   # lets the job request an OIDC token for AWS
+  contents: read
+
+# Never run two deploys of the same environment at once (Terraform state + S3 sync).
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}   # GitHub Environment "devel" or "stage"
+    env:
+      ENV: ${{ github.ref_name }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install and build
+        run: |
+          npm install
+          VITE_APP_ENV="$ENV" npm run build
+
+      - name: Configure AWS credentials (OIDC, no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+          terraform_wrapper: false   # so `terraform output -raw` returns clean values
+
+      - name: Terraform init (state isolated per environment)
+        working-directory: infra
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=devops-lab/${ENV}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}"
+
+      - name: Terraform plan
+        working-directory: infra
+        run: terraform plan -input=false -var-file="envs/${ENV}.tfvars" -out=tfplan
+
+      - name: Terraform apply
+        working-directory: infra
+        run: terraform apply -input=false tfplan
+
+      - name: Read outputs
+        id: tf
+        working-directory: infra
+        run: |
+          echo "bucket=$(terraform output -raw site_bucket)" >> "$GITHUB_OUTPUT"
+          echo "distribution=$(terraform output -raw distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "url=$(terraform output -raw site_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload site to S3
+        run: |
+          # Hashed assets can be cached forever; index.html must always be revalidated.
+          aws s3 sync dist/ "s3://${{ steps.tf.outputs.bucket }}" --delete \
+            --exclude index.html --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://${{ steps.tf.outputs.bucket }}/index.html" \
+            --cache-control "no-cache"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf.outputs.distribution }}" --paths "/*"
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## 🚀 Deployed \`${ENV}\`"
+            echo ""
+            echo "- URL: ${{ steps.tf.outputs.url }}"
+            echo "- Bucket: \`${{ steps.tf.outputs.bucket }}\`"
+            echo "- Distribution: \`${{ steps.tf.outputs.distribution }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

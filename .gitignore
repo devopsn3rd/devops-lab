@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+.terraform.tfstate.lock.info
+# Keep the provider lock file: .terraform.lock.hcl is committed on purpose

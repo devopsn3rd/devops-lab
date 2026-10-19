@@ -1,0 +1,103 @@
+name: CI
+
+# Runs on every PR opened or updated against the protected branches.
+on:
+  pull_request:
+    branches: [devel, stage]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the older, now-irrelevant run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  branch-rules:
+    name: Branch rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only devel may be merged into stage
+        if: github.base_ref == 'stage'
+        run: |
+          if [ "${{ github.head_ref }}" != "devel" ]; then
+            echo "::error::PRs into 'stage' must come from 'devel' (got '${{ github.head_ref }}')."
+            exit 1
+          fi
+          echo "OK: devel -> stage"
+
+      - name: Feature/bugfix branch naming into devel
+        if: github.base_ref == 'devel'
+        run: |
+          if [[ ! "${{ github.head_ref }}" =~ ^(feature|bugfix|hotfix)/[a-z0-9._-]+$ ]]; then
+            echo "::error::Branch '${{ github.head_ref }}' must be named feature/<name> or bugfix/<name>."
+            exit 1
+          fi
+          echo "OK: ${{ github.head_ref }} -> devel"
+
+  app:
+    name: Install, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm            # needs package-lock.json committed
+
+      - name: Install dependencies
+        id: install
+        run: npm install
+
+      # Lint, test and build each run as long as install worked, so one PR
+      # shows the result of all three instead of stopping at the first failure.
+      - name: Lint (ESLint)
+        id: lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+      - name: Test (Jest)
+        id: test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: CI=true npm run test
+
+      - name: Build
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          icon() { case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; *) echo "⚪";; esac; }
+          {
+            echo "## CI results for \`${{ github.head_ref }}\` → \`${{ github.base_ref }}\`"
+            echo ""
+            echo "| Step | Result |"
+            echo "|------|--------|"
+            echo "| Install | $(icon '${{ steps.install.outcome }}') ${{ steps.install.outcome }} |"
+            echo "| Lint    | $(icon '${{ steps.lint.outcome }}') ${{ steps.lint.outcome }} |"
+            echo "| Test    | $(icon '${{ steps.test.outcome }}') ${{ steps.test.outcome }} |"
+            echo "| Build   | $(icon '${{ steps.build.outcome }}') ${{ steps.build.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+      - name: terraform validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
