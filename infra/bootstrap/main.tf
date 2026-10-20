@@ -76,6 +76,7 @@ data "aws_iam_openid_connect_provider" "github" {
 locals {
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
   repo              = "${var.github_owner}/${var.github_repo}"
+  sub_prefix        = var.github_sub_prefix != "" ? var.github_sub_prefix : "repo:${local.repo}"
 }
 
 #############################################
@@ -103,8 +104,8 @@ data "aws_iam_policy_document" "trust" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${local.repo}:environment:devel",
-        "repo:${local.repo}:environment:stage",
+        "${local.sub_prefix}:environment:devel",
+        "${local.sub_prefix}:environment:stage",
       ]
     }
   }

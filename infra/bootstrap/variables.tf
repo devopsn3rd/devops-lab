@@ -29,3 +29,9 @@ variable "create_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "github_sub_prefix" {
+  description = "OIDC subject prefix. Leave empty for repo:<owner>/<repo>; set it when the repo uses immutable subjects (see: gh api repos/<owner>/<repo>/actions/oidc/customization/sub)."
+  type        = string
+  default     = ""
+}
