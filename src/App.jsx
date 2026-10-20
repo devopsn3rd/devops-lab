@@ -9,7 +9,7 @@ export default function App({ environment }) {
     <main>
       <span className="badge">{environmentLabel(environment)}</span>
       <h1>{greeting('DevOps Lab')}</h1>
-      <p>Static React app served from S3 through CloudFront, deployed by Terraform, adding a Feature.</p>
+      <p>Static React app served from S3 through CloudFront, deployed by Terraform. Checking on branch names.</p>
       <button type="button" onClick={() => setClicks((c) => c + 1)}>
         Clicked {clicks} times
       </button>
