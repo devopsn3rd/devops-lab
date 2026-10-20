@@ -5,3 +5,4 @@ private S3 + CloudFront (with access logs) in two isolated environments,
 `devel` and `stage`.
 
 Start with **[LAB.md](LAB.md)**.
+Practicing some Git work for CI/CD with Terraform and AWS.
