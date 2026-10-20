@@ -1,7 +1,7 @@
 // Pure functions: easy to unit test and easy to break on purpose for a "failing test" PR.
 
 export function environmentLabel(env) {
-  const labels = { devel: 'Development', stage: 'Stage' };
+  const labels = { devel: 'Development', stage: 'Staging' };
   return labels[env] ?? 'Local';
 }
 
