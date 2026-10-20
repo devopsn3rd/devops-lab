@@ -10,4 +10,3 @@ export function greeting(name) {
   return trimmed ? `Hello, ${trimmed}!` : 'Hello, world!';
 }
 
-const unused = 1;
